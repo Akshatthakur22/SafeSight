@@ -1,0 +1,19 @@
+{
+  "name": "isro-guard-cua",
+  "version": "0.1.0",
+  "description": "On-device Privacy Firewall for Lightweight Browser Agents — SIH 26171",
+  "private": true,
+  "scripts": {
+    "test": "node tests/stage0.test.js",
+    "gen-icons": "node scripts/gen-icons.js"
+  },
+  "devDependencies": {
+    "puppeteer": "^22.15.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "allowScripts": {
+    "puppeteer@22.15.0": true
+  }
+}

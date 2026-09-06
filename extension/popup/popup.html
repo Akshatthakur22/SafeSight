@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ISRO-Guard CUA</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      width: 380px;
+      min-height: 480px;
+      background: #0f1117;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────────── */
+    .header {
+      background: linear-gradient(135deg, #1a3a5c 0%, #0d2137 100%);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid #1e3a5c;
+    }
+    .header-logo {
+      width: 28px; height: 28px;
+      background: #e67e22;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 14px; color: #fff;
+      flex-shrink: 0;
+    }
+    .header-title { font-size: 14px; font-weight: 700; color: #93c5fd; }
+    .header-sub   { font-size: 10px; color: #64748b; margin-top: 1px; }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e;
+      margin-left: auto;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px #22c55e88;
+    }
+    .status-dot.warn  { background: #f59e0b; box-shadow: 0 0 6px #f59e0b88; }
+    .status-dot.error { background: #ef4444; box-shadow: 0 0 6px #ef444488; }
+
+    /* ── Tabs ─────────────────────────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #1e3a5c;
+      background: #0d1a2a;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 8px 4px;
+      background: none;
+      border: none;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s;
+      border-bottom: 2px solid transparent;
+    }
+    .tab-btn.active {
+      color: #93c5fd;
+      border-bottom-color: #3b82f6;
+    }
+    .tab-btn:hover:not(.active) { color: #94a3b8; }
+
+    .tab-panel { display: none; flex: 1; flex-direction: column; }
+    .tab-panel.active { display: flex; }
+
+    /* ── Task panel ───────────────────────────────────────────────────────── */
+    .task-section { padding: 14px 16px; }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 5px;
+    }
+
+    textarea#task-input {
+      width: 100%;
+      height: 72px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 13px;
+      padding: 8px 10px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    textarea#task-input:focus { border-color: #3b82f6; }
+    textarea#task-input::placeholder { color: #475569; }
+
+    .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+
+    button.primary {
+      flex: 1;
+      padding: 8px 12px;
+      background: #2563eb;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    button.primary:hover { background: #1d4ed8; }
+    button.primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    button.secondary {
+      padding: 8px 12px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button.secondary:hover { background: #273548; }
+
+    /* ── Stage badge ──────────────────────────────────────────────────────── */
+    .stage-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #1e3a5c;
+      border: 1px solid #2563eb44;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #60a5fa;
+      margin-bottom: 10px;
+    }
+
+    /* ── Decision log ─────────────────────────────────────────────────────── */
+    .log-section {
+      flex: 1;
+      padding: 0 16px 14px;
+      display: flex;
+      flex-direction: column;
+    }
+    .log-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .log-container {
+      flex: 1;
+      background: #0a0f1a;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      overflow-y: auto;
+      max-height: 200px;
+      padding: 6px;
+      font-family: 'Cascadia Code', 'Fira Mono', monospace;
+      font-size: 11px;
+    }
+    .log-entry {
+      padding: 3px 4px;
+      border-radius: 3px;
+      line-height: 1.5;
+      margin-bottom: 2px;
+    }
+    .log-entry.info    { color: #94a3b8; }
+    .log-entry.success { color: #4ade80; }
+    .log-entry.warn    { color: #fbbf24; }
+    .log-entry.error   { color: #f87171; }
+    .log-entry.block   { color: #f87171; background: #2d0f0f; }
+    .log-entry.allow   { color: #4ade80; background: #0d2a1a; }
+    .log-entry .ts     { color: #475569; margin-right: 4px; }
+
+    .empty-log { color: #334155; font-style: italic; padding: 8px; text-align: center; }
+
+    /* ── Settings panel ───────────────────────────────────────────────────── */
+    .settings-section { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { margin-bottom: 0; }
+
+    select, input[type="text"], input[type="password"] {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 13px;
+      padding: 7px 10px;
+      outline: none;
+      width: 100%;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    select:focus, input:focus { border-color: #3b82f6; }
+
+    .save-row { display: flex; gap: 8px; margin-top: 4px; }
+    .api-status {
+      font-size: 11px;
+      margin-top: 4px;
+      min-height: 16px;
+    }
+    .api-status.ok    { color: #4ade80; }
+    .api-status.error { color: #f87171; }
+
+    /* ── Privacy mode toggle ──────────────────────────────────────────────── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: #1e293b;
+      border-radius: 6px;
+      border: 1px solid #334155;
+    }
+    .toggle-label { font-size: 12px; font-weight: 600; color: #cbd5e1; }
+    .toggle-sub   { font-size: 10px; color: #64748b; margin-top: 2px; }
+
+    /* iOS-style toggle */
+    .toggle { position: relative; display: inline-block; width: 38px; height: 22px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: #334155;
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .slider::before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      left: 3px; bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle input:checked + .slider { background: #2563eb; }
+    .toggle input:checked + .slider::before { transform: translateX(16px); }
+
+    /* ── Footer ───────────────────────────────────────────────────────────── */
+    .footer {
+      padding: 8px 16px;
+      border-top: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0a0f1a;
+    }
+    .footer-version { font-size: 10px; color: #334155; }
+    .footer-link {
+      font-size: 10px;
+      color: #3b82f6;
+      text-decoration: none;
+      cursor: pointer;
+      background: none;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <div class="header">
+    <div class="header-logo">IG</div>
+    <div>
+      <div class="header-title">ISRO-Guard CUA</div>
+      <div class="header-sub">On-device Privacy Firewall · SIH 26171</div>
+    </div>
+    <div class="status-dot" id="status-dot" title="Extension active"></div>
+  </div>
+
+  <!-- ── Tabs ────────────────────────────────────────────────────────────── -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="agent">Agent</button>
+    <button class="tab-btn"        data-tab="log">Decision Log</button>
+    <button class="tab-btn"        data-tab="settings">Settings</button>
+  </div>
+
+  <!-- ── Agent tab ───────────────────────────────────────────────────────── -->
+  <div class="tab-panel active" id="tab-agent">
+    <div class="task-section">
+      <div class="stage-badge">
+        <span>●</span> Stage 0 — Scaffold
+      </div>
+      <label for="task-input">Task</label>
+      <textarea id="task-input"
+        placeholder="e.g. Find and download the seasonal vegetation index tile for Grid-Zone 12"></textarea>
+      <div class="btn-row">
+        <button class="primary" id="run-btn">▶ Run Task</button>
+        <button class="secondary" id="capture-btn" title="Capture screenshot + DOM only">📷</button>
+        <button class="secondary" id="clear-log-btn" title="Clear log">✕</button>
+      </div>
+    </div>
+
+    <!-- Live decision log shown inside Agent tab for quick feedback -->
+    <div class="log-section">
+      <div class="log-header">
+        <label style="margin:0">Live Log</label>
+        <span id="step-counter" style="font-size:10px;color:#475569;">0 steps</span>
+      </div>
+      <div class="log-container" id="agent-log">
+        <div class="empty-log">No steps run yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Decision Log tab ────────────────────────────────────────────────── -->
+  <div class="tab-panel" id="tab-log">
+    <div class="log-section" style="padding-top:14px">
+      <div class="log-header">
+        <label style="margin:0">All Decisions</label>
+        <button class="secondary" id="export-log-btn" style="padding:4px 8px;font-size:11px;">Export</button>
+      </div>
+      <div class="log-container" id="full-log" style="max-height:340px">
+        <div class="empty-log">No telemetry entries.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Settings tab ────────────────────────────────────────────────────── -->
+  <div class="tab-panel" id="tab-settings">
+    <div class="settings-section">
+
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Privacy Redaction</div>
+          <div class="toggle-sub">Redact PII before sending to cloud (disable only for baseline testing)</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="privacy-toggle" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="api-provider">Cloud Provider</label>
+        <select id="api-provider">
+          <option value="stub">Stub (no API call — Stage 0 testing)</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI (GPT-4o)</option>
+        </select>
+      </div>
+
+      <div class="field" id="api-key-field">
+        <label for="api-key">API Key</label>
+        <input type="password" id="api-key"
+          placeholder="Paste key here — stored in chrome.storage.local only" />
+        <div class="api-status" id="api-status"></div>
+      </div>
+
+      <div class="save-row">
+        <button class="primary" id="save-settings-btn">Save Settings</button>
+        <button class="secondary" id="clear-key-btn">Clear Key</button>
+      </div>
+
+      <div class="field">
+        <label>Confidence Threshold</label>
+        <input type="text" id="confidence-threshold" value="0.45"
+          placeholder="0.00 – 1.00 (default 0.45)" />
+        <div style="font-size:10px;color:#475569;margin-top:3px;">
+          Actions grounded below this score show a confirmation dialog.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Footer ──────────────────────────────────────────────────────────── -->
+  <div class="footer">
+    <span class="footer-version">v0.1.0-stage0</span>
+    <button class="footer-link" id="open-mock-portal">Open Mock Portal</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

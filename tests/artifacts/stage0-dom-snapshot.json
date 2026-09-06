@@ -1,0 +1,98 @@
+{
+  "stepId": "s-stage0-test",
+  "url": "file:///Users/akshatthakur22/Desktop/open%20source/SIH26171/fixtures/mock-portal/index.html",
+  "title": "MOSDAC-Demo Portal — ISRO-Guard Fixture",
+  "timestamp": 1788691293137,
+  "piiElements": [
+    {
+      "id": "analyst-name",
+      "tag": "span",
+      "label": "person_name",
+      "text": "Dr. Test Analyst"
+    },
+    {
+      "id": "session-token",
+      "tag": "span",
+      "label": "session",
+      "text": "MOSDAC-SESSION-abc123def456"
+    },
+    {
+      "id": "profile-name",
+      "tag": "span",
+      "label": "person_name",
+      "text": "Dr. Test Analyst"
+    },
+    {
+      "id": "profile-email",
+      "tag": "span",
+      "label": "email",
+      "text": "test.analyst@example.invalid"
+    },
+    {
+      "id": "profile-phone",
+      "tag": "span",
+      "label": "phone",
+      "text": "+91-9876543210"
+    },
+    {
+      "id": "profile-empid",
+      "tag": "span",
+      "label": "gov_id",
+      "text": "ISRO-EMP-70042"
+    },
+    {
+      "id": "profile-pan",
+      "tag": "span",
+      "label": "gov_id",
+      "text": "ABCDE1234F"
+    },
+    {
+      "id": "profile-aadhaar",
+      "tag": "span",
+      "label": "gov_id",
+      "text": "1234 5678 9012"
+    },
+    {
+      "id": "profile-session",
+      "tag": "span",
+      "label": "session",
+      "text": "MOSDAC-SESSION-abc123def456"
+    },
+    {
+      "id": "edit-name",
+      "tag": "input",
+      "label": "person_name",
+      "text": ""
+    },
+    {
+      "id": "edit-email",
+      "tag": "input",
+      "label": "email",
+      "text": ""
+    },
+    {
+      "id": "edit-phone",
+      "tag": "input",
+      "label": "phone",
+      "text": ""
+    },
+    {
+      "id": "edit-password",
+      "tag": "input",
+      "label": "credential",
+      "text": ""
+    },
+    {
+      "id": "meta-session",
+      "tag": "span",
+      "label": "session",
+      "text": "MOSDAC-SESSION-abc123def456"
+    },
+    {
+      "id": "meta-ip",
+      "tag": "span",
+      "label": "network_id",
+      "text": "192.168.42.7"
+    }
+  ]
+}

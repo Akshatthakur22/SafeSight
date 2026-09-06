@@ -1,0 +1,37 @@
+{
+  "stage": 0,
+  "run_at": "2026-09-06T10:41:33.201Z",
+  "passed": 7,
+  "failed": 0,
+  "total": 7,
+  "results": [
+    {
+      "name": "TEST 1: Mock portal loads and window.__isroGuardTestReady === true",
+      "result": "PASS"
+    },
+    {
+      "name": "TEST 2: Screenshot captured (543ms, saved to tests/artifacts/stage0-screenshot.png)",
+      "result": "PASS"
+    },
+    {
+      "name": "TEST 3: DOM snapshot — ≥10 data-pii elements found (found 15)",
+      "result": "PASS"
+    },
+    {
+      "name": "TEST 4: #search-btn found + clicked → results table appeared (4 rows)",
+      "result": "PASS"
+    },
+    {
+      "name": "TEST 5: window.__knownSecrets has all 7 fixture secrets (found 7)",
+      "result": "PASS"
+    },
+    {
+      "name": "TEST 6: Known-secret values confirmed present in raw portal HTML (scanner fixture valid)",
+      "result": "PASS"
+    },
+    {
+      "name": "TEST 7: AR-1 injection bait present and visually hidden (tiny font)",
+      "result": "PASS"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+[
+  {
+    "rule_id": "block-cross-origin-credential-type",
+    "description": "Block any 'type' action that would send a credential or session value to a different origin than the current page.",
+    "condition": {
+      "action_type": "type",
+      "target_sensitivity_in": ["credential", "session"],
+      "destination_origin_not_equal": "page_origin"
+    },
+    "effect": "block",
+    "message": "Blocked: attempted to send credential/session data to a different origin."
+  },
+  {
+    "rule_id": "block-navigate-external",
+    "description": "Block any 'navigate' action to a non-page-origin URL that contains credential or session placeholder tokens.",
+    "condition": {
+      "action_type": "navigate",
+      "url_contains_token_labels": ["credential", "session"],
+      "destination_origin_not_equal": "page_origin"
+    },
+    "effect": "block",
+    "message": "Blocked: navigation to external URL containing sensitive token."
+  },
+  {
+    "rule_id": "block-high-risk-placeholder-unconfirmed",
+    "description": "Block any action that targets a placeholder marked high_risk unless user has explicitly confirmed.",
+    "condition": {
+      "target_placeholder_risk": "high",
+      "user_confirmed": false
+    },
+    "effect": "block",
+    "message": "Blocked: action targets a high-risk placeholder. User confirmation required."
+  },
+  {
+    "rule_id": "block-unknown-placeholder",
+    "description": "Block any action whose target placeholder token does not exist in the current lockstep map.",
+    "condition": {
+      "target_placeholder_not_in_map": true
+    },
+    "effect": "block",
+    "message": "Blocked: action references an unknown placeholder token not in this session's map."
+  },
+  {
+    "rule_id": "block-reveal-secret-value",
+    "description": "Block any action that appears to attempt to output or echo a redacted value (e.g. a 'type' whose value IS a real PII match).",
+    "condition": {
+      "action_type": "type",
+      "value_is_raw_pii": true
+    },
+    "effect": "block",
+    "message": "Blocked: cloud attempted to type a raw PII value directly."
+  },
+  {
+    "rule_id": "allow-click-non-sensitive",
+    "description": "Allow click actions targeting non-sensitive, non-placeholder elements.",
+    "condition": {
+      "action_type": "click",
+      "target_placeholder_risk": null
+    },
+    "effect": "allow",
+    "message": null
+  }
+]

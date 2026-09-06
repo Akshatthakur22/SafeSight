@@ -1,0 +1,21 @@
+# eval/dataset/
+#
+# This directory holds the manually-annotated test corpus for §12 evaluation.
+# Populated in Stage 7.
+#
+# Expected contents (created during Stage 7):
+#   screenshots/          — PNG screenshots of the mock portal and ISRO portals
+#   dom-snapshots/        — JSON DOM snapshots captured alongside each screenshot
+#   ground-truth.jsonl    — one JSON object per line, one entry per screenshot:
+#                           { "step_id", "url", "sensitive_spans": [...], "screenshot_ref" }
+#
+# Annotation format for sensitive_spans:
+# {
+#   "nodeId":  "#profile-email",
+#   "label":   "email",
+#   "match":   "test.analyst@example.invalid",
+#   "bbox":    { "x": 120, "y": 340, "width": 240, "height": 18 }
+# }
+#
+# Minimum dataset size for Stage 7: 50 annotated screenshots/DOM snapshots.
+# See PRD §12.2 for the IoU ≥ 0.5 hit criterion.
