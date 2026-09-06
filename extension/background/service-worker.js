@@ -34,14 +34,23 @@ async function handleMessage(message, sender) {
 
   switch (type) {
     case 'CAPTURE_AND_RUN':
-      return runPipeline(payload.task, sender.tab.id);
-
     case 'CAPTURE_ONLY':
-      return captureTab(sender.tab.id);
+    case 'HARDCODED_CLICK': {
+      // sender.tab is only populated when the message originates from a content
+      // script. When it comes from the popup (chrome.runtime.sendMessage) there
+      // is no tab context, so we fall back to querying the active tab ourselves.
+      let tabId = sender.tab?.id;
+      if (tabId == null) {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab) throw new Error('No active tab found.');
+        tabId = activeTab.id;
+      }
 
-    case 'HARDCODED_CLICK':
-      // Stage-0 exit test: click a known element by selector on the active tab.
-      return dispatchHardcodedClick(sender.tab.id, payload.selector);
+      if (type === 'CAPTURE_AND_RUN') return runPipeline(payload.task, tabId);
+      if (type === 'CAPTURE_ONLY')    return captureTab(tabId);
+      // HARDCODED_CLICK
+      return dispatchHardcodedClick(tabId, payload.selector);
+    }
 
     case 'GET_LOG':
       return TelemetryLogger.getAll();
