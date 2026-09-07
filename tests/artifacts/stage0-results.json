@@ -1,6 +1,6 @@
 {
   "stage": 0,
-  "run_at": "2026-09-06T10:53:20.215Z",
+  "run_at": "2026-09-07T15:02:28.655Z",
   "passed": 7,
   "failed": 0,
   "total": 7,
@@ -10,7 +10,7 @@
       "result": "PASS"
     },
     {
-      "name": "TEST 2: Screenshot captured (554ms, saved to tests/artifacts/stage0-screenshot.png)",
+      "name": "TEST 2: Screenshot captured (538ms, saved to tests/artifacts/stage0-screenshot.png)",
       "result": "PASS"
     },
     {

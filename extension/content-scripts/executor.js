@@ -9,8 +9,11 @@
  * plus any value-to-type (which, in Stage 4+, is itself a placeholder resolved
  * locally by the placeholder map).
  *
- * Stage 0: click and type dispatch implemented and tested against mock portal.
- * Stage 6: GROUND_AND_EXECUTE message wires grounding + execution together.
+ * Stage 0: HARDCODED_CLICK_CONTENT + GROUND_AND_EXECUTE messages.
+ * Stage 1: EXECUTE_ACTION message added — called after the SW has already
+ *          run GROUND_ACTION separately, so grounding + execution are
+ *          independently logged in the telemetry.
+ * Stage 6: confidence threshold + human-confirmation dialog fully wired.
  */
 
 'use strict';
@@ -180,7 +183,47 @@ function groundAndExecute(msg) {
 // ─── Message listener ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  // Full grounded execution (called from service worker after policy gate passes)
+  // Stage 1: execute a pre-grounded action (SW ran GROUND_ACTION first)
+  if (message.type === 'EXECUTE_ACTION') {
+    try {
+      const { action, groundResult } = message;
+      if (!groundResult?.ok) {
+        sendResponse({ ok: false, error: groundResult?.error ?? 'Grounding failed' });
+        return true;
+      }
+
+      const { bbox } = groundResult;
+      const cx = bbox.x + bbox.width / 2;
+      const cy = bbox.y + bbox.height / 2;
+      const el = document.elementFromPoint(cx, cy);
+
+      if (!el) {
+        sendResponse({ ok: false, error: `No element at grounded coordinates (${cx}, ${cy})` });
+        return true;
+      }
+
+      let execResult;
+      switch (action.type) {
+        case 'click':
+          execResult = dispatchClick(el);
+          break;
+        case 'type':
+          execResult = dispatchType(el, action.value ?? '');
+          break;
+        case 'scroll':
+          execResult = dispatchScroll(action.dx ?? 0, action.dy ?? 100);
+          break;
+        default:
+          execResult = { ok: false, error: `Unknown action type: ${action.type}` };
+      }
+      sendResponse({ ok: execResult.ok, bbox, error: execResult.error ?? null });
+    } catch (err) {
+      sendResponse({ ok: false, error: err.message });
+    }
+    return true;
+  }
+
+  // Legacy combined grounding + execution (kept for Stage-0 back-compat)
   if (message.type === 'GROUND_AND_EXECUTE') {
     try {
       const result = groundAndExecute(message);

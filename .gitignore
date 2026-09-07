@@ -1,0 +1,7 @@
+node_modules/
+tests/artifacts/
+eval/report_*.json
+eval/report_*.md
+
+# API key config — NEVER commit this file
+extension/background/default-config.js

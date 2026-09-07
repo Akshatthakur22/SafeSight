@@ -74,6 +74,9 @@ function setStatus(state) {
 }
 
 // ─── Run task ─────────────────────────────────────────────────────────────────
+// BUG-2/3 FIX: runTask() returns { taskId, finalOutcome, steps, lastStep }.
+// The popup previously read result.stepId and result.outcome which are on
+// lastStep, not on the top-level object.  We now handle both shapes.
 
 runBtn.addEventListener('click', async () => {
   const task = taskInput.value.trim();
@@ -88,7 +91,6 @@ runBtn.addEventListener('click', async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) throw new Error('No active tab found.');
-
     logEntry('info', `Tab: ${tab.title?.slice(0, 50)} (${tab.id})`);
 
     const result = await chrome.runtime.sendMessage({
@@ -96,31 +98,104 @@ runBtn.addEventListener('click', async () => {
       payload: { task }
     });
 
-    _stepCount++;
+    // result shape: { taskId, finalOutcome, steps, lastStep }
+    // lastStep shape: { stepId, outcome, error?, timings }
+    const lastStep = result?.lastStep ?? result;  // graceful fallback for old shape
+    const outcome  = result?.finalOutcome ?? lastStep?.outcome ?? result?.outcome;
+    const stepId   = lastStep?.stepId ?? result?.stepId ?? result?.taskId ?? '?';
+    const errMsg   = lastStep?.error  ?? result?.error;
+
+    _stepCount += result?.steps?.length ?? 1;
     stepCounter.textContent = `${_stepCount} step${_stepCount !== 1 ? 's' : ''}`;
 
-    if (result?.outcome === 'success') {
-      logEntry('success', `✓ Step ${result.stepId} succeeded`);
-      logEntry('allow', `Policy: ${result.policyResult?.result ?? 'allow'}`);
-    } else if (result?.outcome === 'no_action') {
-      logEntry('warn', `Step ${result.stepId}: no action (cloud not configured or stub mode)`);
+    if (outcome === 'success') {
+      logEntry('success', `✓ Step ${stepId} succeeded`);
+    } else if (outcome === 'task_complete') {
+      logEntry('success', `✓ Task complete (${stepId})`);
+    } else if (outcome === 'cloud_error') {
+      logEntry('error', `✗ Cloud error on ${stepId}: ${errMsg ?? '(see SW console for details)'}`);
+    } else if (outcome === 'policy_block') {
+      logEntry('block', `✗ Policy blocked on ${stepId}`);
+    } else if (outcome === 'ground_fail' || outcome === 'ground_low_confidence') {
+      logEntry('warn', `⚠ Grounding failed on ${stepId}: ${errMsg ?? outcome}`);
     } else {
-      logEntry('warn', `Step ${result?.stepId}: outcome = ${result?.outcome}`);
+      // Generic fallback — show whatever we got
+      logEntry('warn', `Step ${stepId}: outcome = ${outcome ?? '(none)'}${errMsg ? ' — ' + errMsg : ''}`);
     }
 
-    if (result?.timings) {
-      const t = result.timings;
-      const parts = Object.entries(t).map(([k, v]) => `${k}:${Math.round(v)}ms`);
+    if (lastStep?.timings) {
+      const parts = Object.entries(lastStep.timings).map(([k, v]) => `${k}:${Math.round(v)}ms`);
       logEntry('info', `Timings — ${parts.join(' | ')}`);
     }
 
-    setStatus('ok');
+    setStatus(outcome === 'success' || outcome === 'task_complete' ? 'ok' : 'error');
+
   } catch (err) {
     logEntry('error', `✗ Error: ${err.message}`);
     setStatus('error');
   } finally {
     runBtn.disabled = false;
     runBtn.textContent = '▶ Run Task';
+  }
+});
+
+// BUG-3 FIX: Listen for per-step live updates from the service worker.
+// This fires for each step as it completes, giving real-time feedback.
+chrome.runtime.onMessage.addListener((message) => {
+  // ── Per-step live status updates ─────────────────────────────────────────
+  if (message.type === 'PIPELINE_STATUS' && message.result) {
+    const { stepId, outcome, error: stepErr } = message.result;
+    if (!stepId) return;
+    if (outcome === 'success') {
+      logEntry('success', `  → ${stepId}: success`);
+    } else if (outcome === 'cloud_error') {
+      logEntry('error', `  → ${stepId}: cloud_error — ${stepErr ?? '(check SW console)'}`);
+    } else if (outcome && outcome !== 'no_action') {
+      logEntry('warn', `  → ${stepId}: ${outcome}${stepErr ? ' — ' + stepErr : ''}`);
+    }
+  }
+
+  // ── Stage 6: Policy gate asks user to confirm a high-risk action ──────────
+  if (message.type === 'ASK_USER_CONFIRM') {
+    const target = message.action?.target_text ?? message.action?.target_placeholder ?? '(unknown)';
+    logEntry('warn',
+      `⚠ Policy: confirmation required for "${target.slice(0, 40)}" — ` +
+      `${message.message ?? 'high-risk placeholder'}`
+    );
+    // Surface a small in-popup confirm strip (non-blocking — user can dismiss)
+    const strip = document.createElement('div');
+    strip.style.cssText =
+      'background:#1e293b;border:1px solid #f59e0b;border-radius:5px;padding:8px 10px;' +
+      'margin:6px 0;font-size:11px;color:#fbbf24;display:flex;gap:8px;align-items:center;';
+    strip.innerHTML =
+      `<span style="flex:1">Confirm: click <b>${escapeHtml(target.slice(0,35))}</b>?</span>` +
+      `<button id="confirm-yes-${message.stepId}" style="padding:3px 10px;background:#2563eb;` +
+      `color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Allow</button>` +
+      `<button id="confirm-no-${message.stepId}" style="padding:3px 10px;background:#374151;` +
+      `color:#94a3b8;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Block</button>`;
+    agentLog.appendChild(strip);
+    agentLog.scrollTop = agentLog.scrollHeight;
+
+    strip.querySelector(`#confirm-yes-${message.stepId}`)?.addEventListener('click', () => {
+      strip.remove();
+      chrome.runtime.sendMessage({ type: 'USER_CONFIRMED', stepId: message.stepId, confirmed: true });
+      logEntry('allow', `  User confirmed action on ${message.stepId}`);
+    });
+    strip.querySelector(`#confirm-no-${message.stepId}`)?.addEventListener('click', () => {
+      strip.remove();
+      chrome.runtime.sendMessage({ type: 'USER_CONFIRMED', stepId: message.stepId, confirmed: false });
+      logEntry('block', `  User rejected action on ${message.stepId}`);
+    });
+  }
+
+  // ── Stage 6: Low-confidence grounding warning ─────────────────────────────
+  if (message.type === 'GROUND_LOW_CONFIDENCE') {
+    const target = message.action?.target_text ?? message.action?.target_placeholder ?? '(unknown)';
+    const pct    = Math.round((message.confidence ?? 0) * 100);
+    logEntry('warn',
+      `⚠ Grounding: low confidence ${pct}% for "${target.slice(0, 35)}" — ` +
+      `step ${message.stepId} paused for review`
+    );
   }
 });
 
@@ -187,14 +262,27 @@ exportLogBtn.addEventListener('click', async () => {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
+const apiModelInput = document.getElementById('api-model');
+
+// Default model IDs shown per provider
+const PROVIDER_DEFAULTS = {
+  groq:      'qwen/qwen3.6-27b',
+  anthropic: 'claude-opus-4-5',
+  openai:    'gpt-4o',
+  stub:      ''
+};
+
 // Load saved settings on open
-chrome.storage.local.get(['apiProvider', 'privacyEnabled', 'confidenceThreshold'], items => {
-  if (items.apiProvider) apiProvider.value = items.apiProvider;
-  privacyToggle.checked = items.privacyEnabled !== false; // default true
+chrome.storage.local.get(['apiProvider', 'apiModel', 'privacyEnabled', 'confidenceThreshold'], items => {
+  if (items.apiProvider) {
+    apiProvider.value = items.apiProvider;
+    updateProviderUI(items.apiProvider);
+  }
+  if (items.apiModel && apiModelInput) apiModelInput.value = items.apiModel;
+  privacyToggle.checked = items.privacyEnabled !== false;
   if (items.confidenceThreshold !== undefined) {
     confidenceInput.value = String(items.confidenceThreshold);
   }
-  // Don't load the API key into the input — show only a masked placeholder.
   chrome.storage.local.get(['apiKey'], k => {
     if (k.apiKey) {
       apiStatus.textContent = '✓ API key stored';
@@ -203,17 +291,39 @@ chrome.storage.local.get(['apiProvider', 'privacyEnabled', 'confidenceThreshold'
   });
 });
 
-// Show/hide key field based on provider
+// BUG-4 FIX: Ping the SW for the current config state when the popup opens.
+// This surfaces misconfigurations (missing key, wrong provider) immediately.
+chrome.runtime.sendMessage({ type: 'PING_CONFIG' }).then(cfg => {
+  if (!cfg) return;
+  const line = `Config: provider=${cfg.apiProvider ?? 'none'} key=${cfg.hasApiKey ? cfg.apiKeyPrefix : 'MISSING'}`;
+  console.info('[Popup]', line);
+  if (!cfg.hasApiKey && cfg.apiProvider !== 'stub') {
+    logEntry('warn', `⚠ No API key in storage — will use stub. Open Settings and save your key.`);
+  }
+}).catch(() => {});
+
+function updateProviderUI(provider) {
+  const isStub = provider === 'stub';
+  document.getElementById('api-key-field').style.display   = isStub ? 'none' : '';
+  const modelField = document.getElementById('api-model-field');
+  if (modelField) modelField.style.display = isStub ? 'none' : '';
+  // Pre-fill the model placeholder with the provider default
+  if (apiModelInput && !apiModelInput.value) {
+    apiModelInput.placeholder = PROVIDER_DEFAULTS[provider] ?? '';
+  }
+}
+
+// Show/hide key + model fields based on provider
 apiProvider.addEventListener('change', () => {
-  document.getElementById('api-key-field').style.display =
-    apiProvider.value === 'stub' ? 'none' : '';
+  updateProviderUI(apiProvider.value);
 });
 
 saveSettingsBtn.addEventListener('click', () => {
-  const provider    = apiProvider.value;
-  const key         = apiKeyInput.value.trim();
-  const privacy     = privacyToggle.checked;
-  const threshold   = parseFloat(confidenceInput.value);
+  const provider   = apiProvider.value;
+  const key        = apiKeyInput.value.trim();
+  const modelId    = apiModelInput?.value.trim() || PROVIDER_DEFAULTS[provider] || '';
+  const privacy    = privacyToggle.checked;
+  const threshold  = parseFloat(confidenceInput.value);
 
   if (isNaN(threshold) || threshold < 0 || threshold > 1) {
     apiStatus.textContent = 'Confidence threshold must be 0.00–1.00';
@@ -221,14 +331,19 @@ saveSettingsBtn.addEventListener('click', () => {
     return;
   }
 
-  const toStore = { apiProvider: provider, privacyEnabled: privacy, confidenceThreshold: threshold };
+  const toStore = {
+    apiProvider:         provider,
+    apiModel:            modelId,
+    privacyEnabled:      privacy,
+    confidenceThreshold: threshold
+  };
   if (key) toStore.apiKey = key;
 
   chrome.storage.local.set(toStore, () => {
-    apiStatus.textContent = '✓ Settings saved';
+    apiStatus.textContent = `✓ Saved (${provider}${modelId ? ' · ' + modelId : ''})`;
     apiStatus.className   = 'api-status ok';
     apiKeyInput.value     = ''; // clear the field after saving
-    setTimeout(() => { apiStatus.textContent = ''; }, 3000);
+    setTimeout(() => { apiStatus.textContent = ''; }, 4000);
   });
 });
 
@@ -237,6 +352,25 @@ clearKeyBtn.addEventListener('click', () => {
     apiStatus.textContent = 'API key cleared.';
     apiStatus.className   = 'api-status error';
     apiKeyInput.value     = '';
+  });
+});
+
+// Force-reload config from default-config.js without reloading the extension.
+document.getElementById('reload-config-btn')?.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'FORCE_RELOAD_CONFIG' }).then(r => {
+    apiStatus.textContent = r?.ok
+      ? `✓ Config reloaded (${(r.keys ?? []).join(', ')})`
+      : '✗ Reload failed';
+    apiStatus.className = r?.ok ? 'api-status ok' : 'api-status error';
+    // Refresh the UI to show new values
+    chrome.storage.local.get(['apiProvider', 'apiModel'], items => {
+      if (items.apiProvider) { apiProvider.value = items.apiProvider; updateProviderUI(items.apiProvider); }
+      if (items.apiModel && apiModelInput) apiModelInput.value = items.apiModel;
+    });
+    setTimeout(() => { apiStatus.textContent = ''; }, 4000);
+  }).catch(err => {
+    apiStatus.textContent = `✗ ${err.message}`;
+    apiStatus.className   = 'api-status error';
   });
 });
 

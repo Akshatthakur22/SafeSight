@@ -1,28 +1,19 @@
 /**
  * DMPR — Dual-Modal Privacy Recognition Engine
- * FR-2: unified entry point that combines regex rules + DOM-signal heuristics + NER.
+ * FR-2: unified entry point combining:
+ *   (a) DOM signal heuristics
+ *   (b) Regex/pattern rules on DOM text
+ *   (c) OCR-based visual detection on the screenshot (MANDATORY — SIH26171 requirement)
+ *   (d) NER (stub, future upgrade path)
  *
- * Stage 0/1: regex + DOM signals only (NER stub returns empty).
- * Stage 2: full implementation wired up; this file's interface stays stable.
- *
- * Output shape per detection (mirrors §10.4 log schema):
- * {
- *   nodeId     : string    — unique DOM node identifier assigned during snapshot
- *   label      : string    — PII category (email / phone / gov_id / session / credential / person_name / geolocation / network_id)
- *   risk       : 'high'|'medium'
- *   match      : string    — the matched text value (kept LOCAL — never sent out)
- *   start      : number    — char offset within the node's text content
- *   end        : number
- *   confidence : number    — 0..1 (regex rules emit 1.0; NER emits model score)
- *   source     : 'regex'|'dom_signal'|'ner'
- *   bbox       : null      — filled in by lockstep-sync.js in Stage 3
- *   redacted   : false     — filled in by ABI redactor in Stage 4
- *   taskRelevant: null     — filled in by task-relevance scorer in Stage 4
- * }
+ * Stage 2: OCR visual detection added — this is the on-device visual perception
+ * channel required by the PS title "On-device Visual Perception for Lightweight
+ * Browser Agents".  DOM detection remains as a supporting channel.
  */
 
-import { runRegexRules } from './regex-rules.js';
-import { runNER } from './ner-model.js';
+import { runRegexRules }       from './regex-rules.js';
+import { runNER }               from './ner-model.js';
+import { detectPIIInScreenshot } from './ocr-visual.js';
 
 /**
  * DOM signal heuristics — FR-2 (c).
@@ -74,19 +65,19 @@ function domSignalCheck(el) {
 }
 
 /**
- * Main detection function.
+ * Main detection function — dual-modal (DOM + visual screenshot OCR).
  *
- * @param {{ elements: Array<{ nodeId, tag, type, autocomplete, ariaLabel, name, id, textContent, value }> }} domSnapshot
- * @param {ImageData|null} _imageData  — reserved for visual OCR (Stage 3+)
- * @returns {Promise<Array>}  — array of detection objects
+ * @param {{ elements: Array<{...}> }} domSnapshot
+ * @param {string|null} screenshotDataUrl  — PNG data URL from captureVisibleTab
+ * @param {{ width: number, height: number }|null} viewport
+ * @returns {Promise<Array>}  — unified detection array (DOM + OCR hits merged)
  */
-export async function detectSensitiveData(domSnapshot, _imageData) {
-  if (!domSnapshot?.elements) return [];
-
+export async function detectSensitiveData(domSnapshot, screenshotDataUrl, viewport = null) {
   const detections = [];
 
-  for (const el of domSnapshot.elements) {
-    // 1. DOM signal heuristic
+  // ── Channel 1: DOM-based detection (regex + signals + NER) ────────────────
+  for (const el of (domSnapshot?.elements ?? [])) {
+    // DOM signal heuristic
     const domHit = domSignalCheck(el);
     if (domHit) {
       detections.push({
@@ -104,12 +95,11 @@ export async function detectSensitiveData(domSnapshot, _imageData) {
       });
     }
 
-    // 2. Regex rules on text content + value
+    // Regex rules on text content + value
     const textToScan = [el.textContent, el.value].filter(Boolean).join(' ');
     if (textToScan.trim()) {
       const regexHits = runRegexRules(textToScan, el.nodeId);
       for (const hit of regexHits) {
-        // Avoid duplicate if dom_signal already flagged this node at same label
         const alreadyFlagged = detections.some(
           d => d.nodeId === el.nodeId && d.label === hit.label && d.source === 'dom_signal'
         );
@@ -131,7 +121,7 @@ export async function detectSensitiveData(domSnapshot, _imageData) {
       }
     }
 
-    // 3. NER (stub in Stage 0; real model in Stage 2)
+    // NER (stub — future upgrade path)
     const nerHits = await runNER(textToScan, el.nodeId);
     for (const hit of nerHits) {
       detections.push({
@@ -147,6 +137,41 @@ export async function detectSensitiveData(domSnapshot, _imageData) {
         redacted: false,
         taskRelevant: null
       });
+    }
+  }
+
+  // ── Channel 2: Visual OCR detection on screenshot (MANDATORY) ─────────────
+  // This is the "on-device visual perception" required by SIH26171.
+  // It catches PII rendered in pixels with no DOM representation.
+  if (screenshotDataUrl) {
+    const ocrResult = await detectPIIInScreenshot(screenshotDataUrl, viewport);
+
+    if (ocrResult === null) {
+      // Fail-closed: OCR worker failed to initialise. Surface this as a thrown
+      // error so the pipeline does NOT silently proceed without visual detection.
+      throw new Error(
+        'OCR visual detection unavailable — Tesseract worker failed to initialise. ' +
+        'Check that extension/assets/tesseract/eng.traineddata is present (22MB). ' +
+        'Pipeline halted to prevent undetected PII leakage.'
+      );
+    }
+
+    for (const hit of ocrResult) {
+      const duplicate = detections.some(
+        d => d.label === hit.label && d.match === hit.match && d.source !== 'ocr'
+      );
+      if (!duplicate) {
+        detections.push(hit);
+      } else {
+        // DOM already caught this value — attach the OCR bbox as a secondary
+        // visual coordinate for the lockstep painter.
+        const existing = detections.find(
+          d => d.label === hit.label && d.match === hit.match
+        );
+        if (existing && !existing.ocrBbox && hit.bbox) {
+          existing.ocrBbox = hit.bbox;
+        }
+      }
     }
   }
 

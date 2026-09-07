@@ -297,7 +297,7 @@
   <div class="tab-panel active" id="tab-agent">
     <div class="task-section">
       <div class="stage-badge">
-        <span>●</span> Stage 0 — Scaffold
+        <span>●</span> Stage 1 — Naive Agent (Groq/Qwen3.6)
       </div>
       <label for="task-input">Task</label>
       <textarea id="task-input"
@@ -353,9 +353,16 @@
         <label for="api-provider">Cloud Provider</label>
         <select id="api-provider">
           <option value="stub">Stub (no API call — Stage 0 testing)</option>
+          <option value="groq">Groq (qwen/qwen3.6-27b) ← Stage 1</option>
           <option value="anthropic">Anthropic (Claude)</option>
           <option value="openai">OpenAI (GPT-4o)</option>
         </select>
+      </div>
+
+      <div class="field" id="api-model-field">
+        <label for="api-model">Model ID <span style="color:#475569;font-weight:400;">(leave blank for provider default)</span></label>
+        <input type="text" id="api-model"
+          placeholder="e.g. qwen/qwen3.6-27b" />
       </div>
 
       <div class="field" id="api-key-field">
@@ -367,6 +374,7 @@
 
       <div class="save-row">
         <button class="primary" id="save-settings-btn">Save Settings</button>
+        <button class="secondary" id="reload-config-btn" title="Re-seed config from default-config.js">↺ Reload Config</button>
         <button class="secondary" id="clear-key-btn">Clear Key</button>
       </div>
 

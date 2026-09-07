@@ -8,16 +8,17 @@
  * scoped to a single tab session, and is never serialised to disk or
  * included in any outbound payload.
  *
- * Stage 0/1: passthrough stub — no redaction applied yet.
- * Stage 2: regex/DOM-signal detections → placeholders in DOM JSON.
+ * Stage 2: regex/DOM-signal + OCR detections → placeholders in DOM JSON.
  * Stage 3: bboxes → placeholder boxes drawn onto screenshot bitmap.
  * Stage 4: task-relevance scoring filters keep-plaintext vs. redact.
  */
 
+import { registerSecret } from '../pre-send-scanner.js';
+
 /**
  * In-memory store: placeholder token → real value.
  * Cleared on tab close (the service worker itself is ephemeral).
- * Key:   e.g. "EMAIL_REDACTED#b8c3"
+ * Key:   e.g. "[EMAIL_REDACTED#b8c3]"
  * Value: the original string (never leaves this module)
  *
  * @type {Map<string, string>}
@@ -28,20 +29,12 @@ const _tokenMap = new Map();
  * Resolve a placeholder token back to its real value.
  * Used by the Grounding Actuator (Stage 6) when the action target IS a
  * placeholder that needs to be typed into a form — only executed locally.
- *
- * @param {string} token
- * @returns {string|undefined}
  */
 export function resolveToken(token) {
   return _tokenMap.get(token);
 }
 
-/**
- * Return a read-only copy of the full placeholder map.
- * Used by the policy engine to check whether an action references a known token.
- *
- * @returns {Object.<string, string>}
- */
+/** Return a read-only copy of the full placeholder map (token → real value). */
 export function getPlaceholderMap() {
   return Object.fromEntries(_tokenMap);
 }
@@ -66,10 +59,6 @@ const LABEL_PREFIX = {
   unknown:     'PII_REDACTED'
 };
 
-/**
- * Generate a deterministic 4-char hex hash from a string.
- * Short enough to be readable in a screenshot; not cryptographically meaningful.
- */
 function shortHash(str) {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
@@ -81,66 +70,58 @@ function shortHash(str) {
 
 /**
  * Obtain (or create) a placeholder token for a real value.
- * Idempotent: the same real value always yields the same token.
- *
- * @param {string} realValue
- * @param {string} label     — PII category
- * @returns {string}  e.g. "[EMAIL_REDACTED#b8c3]"
+ * Also registers the real value with the pre-send scanner (hard-block).
+ * Idempotent: same real value always yields the same token.
  */
 export function getOrCreateToken(realValue, label) {
-  // Check if we already have a token for this value
   for (const [tok, val] of _tokenMap.entries()) {
     if (val === realValue) return tok;
   }
   const prefix = LABEL_PREFIX[label] ?? LABEL_PREFIX.unknown;
-  const hash = shortHash(realValue);
-  const token = `[${prefix}#${hash}]`;
+  const hash   = shortHash(realValue);
+  const token  = `[${prefix}#${hash}]`;
   _tokenMap.set(token, realValue);
+  // Arm the pre-send scanner — if this value ever appears in an outbound payload, block it.
+  registerSecret(realValue);
   return token;
 }
 
 // ─── Payload builder ──────────────────────────────────────────────────────────
 
 /**
- * Build the sanitized outbound payload from a DOM snapshot + detections.
+ * Build the sanitized outbound payload.
  *
- * Stage 0/1 stub: passes through unmodified (privacy not yet applied).
- * Stage 2 will replace the stub body.
+ * Stage 2+: real DOM redaction applied.
+ *   - Detections with taskRelevant !== true are replaced with typed placeholder tokens.
+ *   - Screenshot bitmap redaction happens separately via paintRedactionBoxes()
+ *     in the service worker BEFORE this result is passed to callCloudPlanner().
  *
  * @param {object} domSnapshot
- * @param {string} screenshotDataUrl
- * @param {Array}  detections        — from DMPR engine
- * @param {string} task              — user task string (for task-relevance in Stage 4)
- * @returns {{ sanitizedDom: object, sanitizedScreenshot: string, placeholderMap: object }}
+ * @param {string} _screenshotDataUrl  — unused here; painter called separately
+ * @param {Array}  detections
+ * @param {string} _task               — unused; relevance already scored
+ * @returns {{ sanitizedDom, placeholderMap }}
  */
-export async function buildSanitizedPayload(domSnapshot, screenshotDataUrl, detections, task) {
-  // Stage 0/1 stub — no redaction, passthrough.
-  // WARNING: This intentionally sends raw data — Stage 2 will fix this.
-  // The zero-secret-leak scanner (FR-5) will fail on raw data, which is expected
-  // behaviour for Stage 0/1 and is the motivator for building Stage 2.
+export async function buildSanitizedPayload(domSnapshot, _screenshotDataUrl, detections, _task) {
+  const toRedact = detections.filter(d => d.taskRelevant !== true && d.match?.trim());
+  const { sanitizedDom, updatedDetections } = applyDOMRedaction(domSnapshot, toRedact);
 
-  return {
-    sanitizedDom: domSnapshot,
-    sanitizedScreenshot: screenshotDataUrl,
-    placeholderMap: getPlaceholderMap()
-  };
+  // Propagate redacted flag + token back to the original detections array
+  for (const upd of updatedDetections) {
+    const orig = detections.find(d => d.nodeId === upd.nodeId && d.match === upd.match);
+    if (orig) { orig.redacted = upd.redacted; orig.token = upd.token; }
+  }
+
+  return { sanitizedDom, placeholderMap: getPlaceholderMap() };
 }
 
 /**
- * Apply redaction to a DOM snapshot given a list of detections.
- * Replaces the `textContent` / `value` of flagged nodes with placeholder tokens,
- * and marks each detection as `redacted: true`.
- *
- * Called by buildSanitizedPayload once Stage 2 is implemented.
- *
- * @param {object} domSnapshot
- * @param {Array}  detections
- * @returns {{ sanitizedDom: object, updatedDetections: Array }}
+ * Apply DOM redaction: deep-clone the snapshot, replace matched values with tokens.
+ * Called by buildSanitizedPayload.
  */
 export function applyDOMRedaction(domSnapshot, detections) {
-  // Deep clone so the original snapshot (held locally) is not mutated
   const sanitized = JSON.parse(JSON.stringify(domSnapshot));
-  const updated = JSON.parse(JSON.stringify(detections));
+  const updated   = JSON.parse(JSON.stringify(detections));
 
   for (const det of updated) {
     const el = sanitized.elements?.find(e => e.nodeId === det.nodeId);
@@ -148,17 +129,15 @@ export function applyDOMRedaction(domSnapshot, detections) {
 
     const token = getOrCreateToken(det.match, det.label);
 
-    // Replace in textContent
-    if (el.textContent && el.textContent.includes(det.match)) {
+    if (el.textContent?.includes(det.match)) {
       el.textContent = el.textContent.replaceAll(det.match, token);
     }
-    // Replace in value (input fields)
-    if (el.value && el.value.includes(det.match)) {
+    if (el.value?.includes(det.match)) {
       el.value = el.value.replaceAll(det.match, token);
     }
 
     det.redacted = true;
-    det.token = token;
+    det.token    = token;
   }
 
   return { sanitizedDom: sanitized, updatedDetections: updated };

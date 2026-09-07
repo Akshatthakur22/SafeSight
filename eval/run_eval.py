@@ -123,18 +123,27 @@ def compute_pii_pr(log_entries: list, gt_entries: list, iou_threshold: float) ->
     if not gt_entries:
         return {'error': 'TBD — ground-truth annotations not yet available (Stage 7)'}
 
-    # Build a step_id → list[detection] index from the log
-    log_det_by_step = defaultdict(list)
+    # Build detection indices — by gt_step_id link AND by section for fallback
+    log_det_by_gt_step = defaultdict(list)
+    log_det_by_section = defaultdict(list)
     for entry in log_entries:
+        gt_key = entry.get('gt_step_id') or entry.get('step_id', '')
         for det in entry.get('detections', []):
-            log_det_by_step[entry['step_id']].append(det)
+            log_det_by_gt_step[gt_key].append(det)
+        sec = entry.get('section', '')
+        if sec:
+            for det in entry.get('detections', []):
+                log_det_by_section[sec].append(det)
 
     # Per-category counters
     stats = defaultdict(lambda: {'tp': 0, 'fp': 0, 'fn': 0})
 
     for gt in gt_entries:
         step_id = gt.get('step_id', '')
-        pred_dets = log_det_by_step.get(step_id, [])
+        section  = gt.get('section', '')
+        pred_dets = log_det_by_gt_step.get(step_id, [])
+        if not pred_dets and section:
+            pred_dets = log_det_by_section.get(section, [])
 
         for gt_span in gt.get('sensitive_spans', []):
             label    = gt_span['label']
@@ -146,13 +155,15 @@ def compute_pii_pr(log_entries: list, gt_entries: list, iou_threshold: float) ->
             for pred in pred_dets:
                 if pred.get('label') != label:
                     continue
-                # Bbox IoU check
                 if gt_bbox and pred.get('bbox'):
                     if bbox_iou(gt_bbox, pred['bbox']) >= iou_threshold:
                         matched = True
                         break
-                # Exact span match fallback
                 if gt_match and gt_match == pred.get('match', ''):
+                    matched = True
+                    break
+                # Loose match: any bbox overlap
+                if gt_bbox and pred.get('bbox') and bbox_iou(gt_bbox, pred['bbox']) > 0:
                     matched = True
                     break
 

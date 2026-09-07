@@ -141,11 +141,22 @@ export function evaluatePolicy(action, placeholderMap, context = {}) {
   if (targetToken) {
     const tokenInfo = getTokenRisk(targetToken, placeholderMap);
     if (tokenInfo?.risk === 'high' && !userConfirmed) {
-      return {
-        result: 'ask_user',
-        ruleFired: 'block-high-risk-placeholder-unconfirmed',
-        message: `Action targets a high-risk placeholder (${tokenInfo.label}). Please confirm.`
-      };
+      // Same-origin type actions with high-risk placeholders are permitted
+      // (the user is filling in their own form on their own page).
+      // Cross-origin was already blocked above; ask_user applies here for
+      // non-type actions AND type actions where no explicit destination was provided
+      // (unknown destination → require confirmation).
+      const destOriginForAsk = action.destination_origin ?? null;
+      const isSameOriginType = action.type === 'type' &&
+        destOriginForAsk !== null &&
+        destOriginForAsk === pageOrigin;
+      if (!isSameOriginType) {
+        return {
+          result: 'ask_user',
+          ruleFired: 'block-high-risk-placeholder-unconfirmed',
+          message: `Action targets a high-risk placeholder (${tokenInfo.label}). Please confirm.`
+        };
+      }
     }
 
     // ── Rule 4: block unknown placeholder (not in current session map) ────────
