@@ -1,6 +1,6 @@
 # ISRO-Guard CUA — On-Device Visual Perception for Lightweight Browser Agents
 
-**SIH26171 Problem Statement:** Build a privacy-preserving browser agent that detects and redacts sensitive data before sending it to the cloud, meeting specific rubric metrics for task success, PII detection, redaction quality, resource utilization, and latency.
+ Build a privacy-preserving browser agent that detects and redacts sensitive data before sending it to the cloud, meeting specific rubric metrics for task success, PII detection, redaction quality, resource utilization, and latency.
 
 **Status:** ✅ **Prototype Complete** — Stages 0–7 fully implemented. All automated tests passing.
 
